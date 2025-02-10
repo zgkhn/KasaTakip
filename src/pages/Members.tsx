@@ -98,12 +98,13 @@ const Members: React.FC = () => {
         } 
       } 
     } = {};
-    
+    const monthOrder = [ '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+
     // Son 2 yılı oluştur
     const currentYear = new Date().getFullYear();
     for (let year = currentYear; year >= currentYear - 1; year--) {
       grouped[year] = {};
-      Object.keys(allMonths).forEach(month => {
+      monthOrder.forEach(month => {
         grouped[year][allMonths[month]] = {
           isPaid: false,
           amount: 0,

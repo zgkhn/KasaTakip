@@ -30,15 +30,20 @@ const Payments: React.FC = () => {
 
   const fetchPayments = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('payments')
         .select(`
           *,
           member:profiles!user_id(full_name)
         `)
-        .eq('user_id', profile?.id) // Giriş yapan kullanıcının kayıtlarını filtreliyoruz.
         .order('payment_date', { ascending: false });
-
+  
+      if (!profile?.is_admin) {
+        query = query.eq('user_id', profile?.id); // Admin değilse sadece kendi ödemelerini görür.
+      }
+  
+      const { data, error } = await query;
+  
       if (error) throw error;
       setPayments(data || []);
     } catch (error) {
