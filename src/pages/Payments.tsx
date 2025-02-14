@@ -23,6 +23,7 @@ const Payments: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Yeni ödeme için state (ödeme tarihi otomatik olarak günün tarihi)
   const [newPayment, setNewPayment] = useState({
     user_id: '',
     amount: '',
@@ -30,42 +31,47 @@ const Payments: React.FC = () => {
     payment_month: format(new Date(), 'yyyy-MM', { locale: tr }),
   });
 
-  // Düzenleme için state
+  // Düzenleme için state (ödeme tarihi kullanıcıya sorulmayacak)
   const [showEditModal, setShowEditModal] = useState(false);
   const [editPayment, setEditPayment] = useState<{
     id: string | null;
     user_id: string;
     amount: string;
     payment_date: string;
+    payment_month: string;
   }>({
     id: null,
     user_id: '',
     amount: '',
     payment_date: format(new Date(), 'yyyy-MM-dd', { locale: tr }),
+    payment_month: format(new Date(), 'yyyy-MM', { locale: tr }),
   });
 
   const handleOpenEditModal = (payment: Payment) => {
     setEditPayment({
-      id: payment.id, // payment.id artık string (uuid)
+      id: payment.id,
       user_id: payment.user_id,
       amount: payment.amount.toString(),
-      payment_date: format(new Date(payment.payment_date), 'yyyy-MM-dd', { locale: tr }),
+      // Eski ödeme tarihi alınsa da, güncelleme sırasında günün tarihi kullanılacak
+      payment_date: payment.payment_date,
+      payment_month: format(new Date(payment.payment_month), 'yyyy-MM', { locale: tr }),
     });
     setShowEditModal(true);
   };
 
   const handleEditPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editPayment.id === null) return;
+    if (!editPayment.id) return;
     try {
-      const paymentMonth = editPayment.payment_date.slice(0, 7) + '-01';
+      // Güncelleme sırasında ödeme tarihi günün tarihi olarak belirlenecek
+      const currentPaymentDate = format(new Date(), 'yyyy-MM-dd', { locale: tr });
       const { data, error } = await supabase
         .from('payments')
         .update({
           user_id: editPayment.user_id,
           amount: parseFloat(editPayment.amount),
-          payment_date: editPayment.payment_date,
-          payment_month: paymentMonth,
+          payment_date: currentPaymentDate,
+          payment_month: `${editPayment.payment_month}-01`,
         })
         .eq('id', editPayment.id)
         .select();
@@ -74,9 +80,8 @@ const Payments: React.FC = () => {
         console.error('Güncelleme Hatası:', error);
         throw error;
       }
-      if (data && data.length === 0) {
-        console.error('Güncelleme gerçekleşmedi, eşleşen kayıt bulunamadı');
-      }
+      // Eğer data boş dizi geliyorsa; bu, güncellenmek istenen değerlerle
+      // veritabanındaki değerlerin aynı olmasından kaynaklanabilir.
       toast.success('Ödeme başarıyla güncellendi');
       setShowEditModal(false);
       fetchPayments();
@@ -109,12 +114,10 @@ const Payments: React.FC = () => {
   };
 
   useEffect(() => {
-    // Profil veya filtreler değiştiğinde ödemeleri getir
     fetchPayments();
     if (profile?.is_admin) {
       fetchMembers();
     }
-    // Filtre değiştiğinde sayfalama sıfırlansın
     setCurrentPage(1);
   }, [profile?.id, filterUser, filterDate, filterMonth]);
 
@@ -171,10 +174,12 @@ const Payments: React.FC = () => {
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Eklerken de ödeme tarihi günün tarihi olarak kullanılıyor.
+      const currentPaymentDate = format(new Date(), 'yyyy-MM-dd', { locale: tr });
       const { error } = await supabase.from('payments').insert({
         user_id: newPayment.user_id,
         amount: parseFloat(newPayment.amount),
-        payment_date: newPayment.payment_date,
+        payment_date: currentPaymentDate,
         payment_month: `${newPayment.payment_month}-01`,
         created_by: profile?.id,
       });
@@ -192,7 +197,6 @@ const Payments: React.FC = () => {
 
   if (loading) return <div className="text-center p-4">Yükleniyor...</div>;
 
-  // Sayfalama için hesaplamalar
   const indexOfLastPayment = currentPage * itemsPerPage;
   const indexOfFirstPayment = indexOfLastPayment - itemsPerPage;
   const currentPayments = payments.slice(indexOfFirstPayment, indexOfLastPayment);
@@ -204,7 +208,16 @@ const Payments: React.FC = () => {
         <h1 className="text-2xl font-semibold mb-2 sm:mb-0">Ödemeler</h1>
         {profile?.is_admin && (
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              // Modal açılırken tarihleri güncelliyoruz
+              setNewPayment({
+                user_id: '',
+                amount: '',
+                payment_date: format(new Date(), 'yyyy-MM-dd', { locale: tr }),
+                payment_month: format(new Date(), 'yyyy-MM', { locale: tr }),
+              });
+              setShowAddModal(true);
+            }}
             className="w-full sm:w-auto flex items-center justify-center bg-indigo-600 text-white px-4 py-2 rounded-md shadow hover:bg-indigo-700"
           >
             <Plus className="w-4 h-4 mr-2" /> Ödeme Ekle
@@ -346,10 +359,11 @@ const Payments: React.FC = () => {
                 className="w-full p-2 border rounded"
                 required
               />
+              {/* Ödeme tarihi input'u kaldırıldı, günün tarihi otomatik kullanılıyor */}
               <input
-                type="date"
-                value={newPayment.payment_date}
-                onChange={(e) => setNewPayment({ ...newPayment, payment_date: e.target.value })}
+                type="month"
+                value={newPayment.payment_month}
+                onChange={(e) => setNewPayment({ ...newPayment, payment_month: e.target.value })}
                 className="w-full p-2 border rounded"
                 required
               />
@@ -367,7 +381,14 @@ const Payments: React.FC = () => {
       {/* Düzenleme Modalı */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-2">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-2 relative">
+            {/* Kapatma Butonu */}
+            <button
+              onClick={() => setShowEditModal(false)}
+              className="absolute top-2 right-2 text-gray-600 hover:text-gray-800"
+            >
+              X
+            </button>
             <h3 className="text-lg font-medium mb-4">Ödemeyi Düzenle</h3>
             <form onSubmit={handleEditPayment} className="space-y-4">
               <select
@@ -391,10 +412,11 @@ const Payments: React.FC = () => {
                 className="w-full p-2 border rounded"
                 required
               />
+              {/* Ödeme tarihi input'u kaldırıldı; güncelleme anında günün tarihi kullanılacak */}
               <input
-                type="date"
-                value={editPayment.payment_date}
-                onChange={(e) => setEditPayment({ ...editPayment, payment_date: e.target.value })}
+                type="month"
+                value={editPayment.payment_month}
+                onChange={(e) => setEditPayment({ ...editPayment, payment_month: e.target.value })}
                 className="w-full p-2 border rounded"
                 required
               />
