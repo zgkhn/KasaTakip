@@ -143,7 +143,7 @@ const Members: React.FC = () => {
   }
 
   return (
-    <div>
+    <div className="p-4">
       <div className="sm:flex sm:items-center mb-6">
         <div className="sm:flex-auto">
           <h1 className="text-2xl font-semibold text-gray-900">Üyeler</h1>
@@ -163,7 +163,6 @@ const Members: React.FC = () => {
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Rol
                     </th>
-                 
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       İşlemler
                     </th>
@@ -186,7 +185,6 @@ const Members: React.FC = () => {
                           </span>
                         )}
                       </td>
-                     
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         <button
                           onClick={() => handleShowDetails(member)}
@@ -206,11 +204,9 @@ const Members: React.FC = () => {
 
       {/* Detay Modal */}
       {showDetailModal && selectedMember && (
-        <div className="fixed z-10 inset-0 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
-
-            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full sm:p-6">
+        <div className="fixed inset-0 z-10 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4">
+            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-lg sm:max-w-2xl">
               <div className="absolute top-0 right-0 pt-4 pr-4">
                 <button
                   onClick={() => setShowDetailModal(false)}
@@ -220,7 +216,7 @@ const Members: React.FC = () => {
                 </button>
               </div>
 
-              <div>
+              <div className="px-4 pt-5 pb-4 sm:p-6">
                 <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">
                   {selectedMember.full_name} - Aidat Geçmişi
                 </h3>
@@ -238,7 +234,8 @@ const Members: React.FC = () => {
                         <h3 className="text-lg leading-6 font-medium text-gray-900">{year} Yılı Ödemeleri</h3>
                       </div>
                       <div className="border-t border-gray-200">
-                        <div className="grid grid-cols-3 gap-4 p-4">
+                        {/* Mobilde 2 sütun, geniş ekranlarda 3 sütun */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4">
                           {Object.entries(months).map(([month, data]) => (
                             <div 
                               key={month} 

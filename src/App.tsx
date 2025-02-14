@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import Members from './pages/Members';
+import Takip from './pages/Takip';
+
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
 
@@ -34,6 +36,8 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="payments" element={<Payments />} />
             <Route path="expenses" element={<Expenses />} />
+            <Route path="takip" element={<Takip />} />
+
             <Route path="members" element={<Members />} />
             <Route path="changePassword" element={<ChangePassword />} />
 

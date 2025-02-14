@@ -49,8 +49,26 @@ const Layout: React.FC = () => {
                   <CreditCard className="w-4 h-4 mr-2" />
                   Ödemeler
                 </NavLink>
-                <NavLink
-                  to="/expenses"
+                
+                {profile?.is_admin && (
+                  <NavLink
+                    to="/expenses"
+                    className={({ isActive }) =>
+                      `inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                        isActive
+                          ? 'border-indigo-500 text-gray-900'
+                          : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                      }`
+                    }
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    Harcamalar
+                  </NavLink>
+                )}
+                
+                
+                 <NavLink
+                  to="/takip"
                   className={({ isActive }) =>
                     `inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
                       isActive
@@ -60,7 +78,7 @@ const Layout: React.FC = () => {
                   }
                 >
                   <Receipt className="w-4 h-4 mr-2" />
-                  Harcamalar
+                  Ödeme Takip
                 </NavLink>
                 {profile?.is_admin && (
                   <NavLink
@@ -133,12 +151,26 @@ const Layout: React.FC = () => {
             <CreditCard className="w-5 h-5 mr-2" />
             Ödemeler
           </NavLink>
-          <NavLink
-            to="/expenses"
+       
+            {profile?.is_admin && (
+              <NavLink
+                to="/expenses"
+                className="block px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-100"
+              >
+                <Users className="w-5 h-5 mr-2" />
+                Harcamalar
+              </NavLink>
+            )}     
+          
+
+
+          
+           <NavLink
+            to="/Takip"
             className="block px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-100"
           >
             <Receipt className="w-5 h-5 mr-2" />
-            Harcamalar
+            Ödeme Takip
           </NavLink>
           <NavLink
             to="/changePassword"

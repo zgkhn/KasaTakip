@@ -14,6 +14,15 @@ const Payments: React.FC = () => {
   const [members, setMembers] = useState<Profile[]>([]);
   const { profile } = useAuth();
 
+  // Filtre state’leri
+  const [filterUser, setFilterUser] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
+
+  // Sayfalama state’leri
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   const [newPayment, setNewPayment] = useState({
     user_id: '',
     amount: '',
@@ -21,33 +30,125 @@ const Payments: React.FC = () => {
     payment_month: format(new Date(), 'yyyy-MM', { locale: tr }),
   });
 
+  // Düzenleme için state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPayment, setEditPayment] = useState<{
+    id: string | null;
+    user_id: string;
+    amount: string;
+    payment_date: string;
+  }>({
+    id: null,
+    user_id: '',
+    amount: '',
+    payment_date: format(new Date(), 'yyyy-MM-dd', { locale: tr }),
+  });
+
+  const handleOpenEditModal = (payment: Payment) => {
+    setEditPayment({
+      id: payment.id, // payment.id artık string (uuid)
+      user_id: payment.user_id,
+      amount: payment.amount.toString(),
+      payment_date: format(new Date(payment.payment_date), 'yyyy-MM-dd', { locale: tr }),
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editPayment.id === null) return;
+    try {
+      const paymentMonth = editPayment.payment_date.slice(0, 7) + '-01';
+      const { data, error } = await supabase
+        .from('payments')
+        .update({
+          user_id: editPayment.user_id,
+          amount: parseFloat(editPayment.amount),
+          payment_date: editPayment.payment_date,
+          payment_month: paymentMonth,
+        })
+        .eq('id', editPayment.id)
+        .select();
+
+      if (error) {
+        console.error('Güncelleme Hatası:', error);
+        throw error;
+      }
+      if (data && data.length === 0) {
+        console.error('Güncelleme gerçekleşmedi, eşleşen kayıt bulunamadı');
+      }
+      toast.success('Ödeme başarıyla güncellendi');
+      setShowEditModal(false);
+      fetchPayments();
+    } catch (error) {
+      toast.error('Ödeme güncellenemedi');
+    }
+  };
+
+  const handleDeletePayment = async (id: string) => {
+    if (!window.confirm('Ödemeyi silmek istediğinize emin misiniz?')) return;
+    try {
+      const { data, error } = await supabase
+        .from('payments')
+        .delete()
+        .eq('id', id)
+        .select();
+
+      if (error) {
+        console.error('Silme Hatası:', error);
+        throw error;
+      }
+      if (data && data.length === 0) {
+        console.error('Silme gerçekleşmedi, eşleşen kayıt bulunamadı');
+      }
+      toast.success('Ödeme başarıyla silindi');
+      fetchPayments();
+    } catch (error) {
+      toast.error('Ödeme silinemedi');
+    }
+  };
+
   useEffect(() => {
+    // Profil veya filtreler değiştiğinde ödemeleri getir
     fetchPayments();
     if (profile?.is_admin) {
       fetchMembers();
     }
-  }, [profile?.id]);
+    // Filtre değiştiğinde sayfalama sıfırlansın
+    setCurrentPage(1);
+  }, [profile?.id, filterUser, filterDate, filterMonth]);
 
   const fetchPayments = async () => {
     try {
       let query = supabase
         .from('payments')
-        .select(`
-          *,
-          member:profiles!user_id(full_name)
-        `)
+        .select(`*, member:profiles!user_id(full_name)`)
         .order('payment_date', { ascending: false });
-  
+
       if (!profile?.is_admin) {
-        query = query.eq('user_id', profile?.id); // Admin değilse sadece kendi ödemelerini görür.
+        query = query.eq('user_id', profile?.id);
+      } else {
+        if (filterUser) {
+          query = query.eq('user_id', filterUser);
+        }
       }
-  
+
+      if (filterDate) {
+        query = query.eq('payment_date', filterDate);
+      }
+
+      if (filterMonth) {
+        // payment_month veritabanında 'YYYY-MM-01' formatında tutuluyor.
+        query = query.eq('payment_month', `${filterMonth}-01`);
+      }
+
       const { data, error } = await query;
-  
-      if (error) throw error;
+      if (error) {
+        console.error('Ödemeler Getirme Hatası:', error);
+        throw error;
+      }
       setPayments(data || []);
     } catch (error) {
-      console.error('Ödemeler alınırken hata oluştu:', error);
       toast.error('Ödemeler yüklenemedi');
     } finally {
       setLoading(false);
@@ -56,15 +157,14 @@ const Payments: React.FC = () => {
 
   const fetchMembers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('full_name');
-
-      if (error) throw error;
+      const { data, error } = await supabase.from('profiles').select('*').order('full_name');
+      if (error) {
+        console.error('Üyeler Getirme Hatası:', error);
+        throw error;
+      }
       setMembers(data || []);
     } catch (error) {
-      console.error('Üyeler alınırken hata oluştu:', error);
+      toast.error('Üyeler yüklenemedi');
     }
   };
 
@@ -78,191 +178,233 @@ const Payments: React.FC = () => {
         payment_month: `${newPayment.payment_month}-01`,
         created_by: profile?.id,
       });
-
-      if (error) throw error;
-
+      if (error) {
+        console.error('Ekleme Hatası:', error);
+        throw error;
+      }
       toast.success('Ödeme başarıyla eklendi');
       setShowAddModal(false);
-      setNewPayment({
-        user_id: '',
-        amount: '',
-        payment_date: format(new Date(), 'yyyy-MM-dd', { locale: tr }),
-        payment_month: format(new Date(), 'yyyy-MM', { locale: tr }),
-      });
       fetchPayments();
     } catch (error) {
-      console.error('Ödeme eklenirken hata oluştu:', error);
       toast.error('Ödeme eklenemedi');
     }
   };
 
-  if (loading) {
-    return <div>Yükleniyor...</div>;
-  }
+  if (loading) return <div className="text-center p-4">Yükleniyor...</div>;
+
+  // Sayfalama için hesaplamalar
+  const indexOfLastPayment = currentPage * itemsPerPage;
+  const indexOfFirstPayment = indexOfLastPayment - itemsPerPage;
+  const currentPayments = payments.slice(indexOfFirstPayment, indexOfLastPayment);
+  const totalPages = Math.ceil(payments.length / itemsPerPage);
 
   return (
-    <div>
-      <div className="sm:flex sm:items-center mb-6">
-        <div className="sm:flex-auto">
-          <h1 className="text-2xl font-semibold text-gray-900">Ödemeler</h1>
-        </div>
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
+        <h1 className="text-2xl font-semibold mb-2 sm:mb-0">Ödemeler</h1>
         {profile?.is_admin && (
-          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-            <button
-              type="button"
-              onClick={() => setShowAddModal(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Ödeme Ekle
-            </button>
-          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="w-full sm:w-auto flex items-center justify-center bg-indigo-600 text-white px-4 py-2 rounded-md shadow hover:bg-indigo-700"
+          >
+            <Plus className="w-4 h-4 mr-2" /> Ödeme Ekle
+          </button>
         )}
       </div>
 
-      <div className="flex flex-col">
-        <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-          <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
-            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-              <table className="min-w-full divide-y divide-gray-300">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Üye
-                    </th>
-                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Tutar
-                    </th>
-                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Ödeme Tarihi
-                    </th>
-                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Ödeme Ayı
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {payments.map((payment) => (
-                    <tr key={payment.id}>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {(payment as any).member?.full_name}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        ₺{payment.amount.toFixed(2)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {format(new Date(payment.payment_date), 'dd-MM-yyyy', { locale: tr })}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {format(new Date(payment.payment_month), 'MMMM yyyy', { locale: tr })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+      {/* Filtre Alanları */}
+      <div className="flex flex-wrap gap-4 mb-4">
+        {profile?.is_admin && (
+          <select
+            value={filterUser}
+            onChange={(e) => setFilterUser(e.target.value)}
+            className="p-2 border rounded"
+          >
+            <option value="">Tüm Üyeler</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.full_name}
+              </option>
+            ))}
+          </select>
+        )}
+        <input
+          type="date"
+          value={filterDate}
+          onChange={(e) => setFilterDate(e.target.value)}
+          className="p-2 border rounded"
+          placeholder="Tarih"
+        />
+        <input
+          type="month"
+          value={filterMonth}
+          onChange={(e) => setFilterMonth(e.target.value)}
+          className="p-2 border rounded"
+          placeholder="Ay"
+        />
       </div>
 
-      {showAddModal && (
-        <div className="fixed z-10 inset-0 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
-
-            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
-              <form onSubmit={handleAddPayment}>
-                <div>
-                  <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                    Yeni Ödeme Ekle
-                  </h3>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="member" className="block text-sm font-medium text-gray-700">
-                      Üye
-                    </label>
-                    <select
-                      id="member"
-                      value={newPayment.user_id}
-                      onChange={(e) => setNewPayment({ ...newPayment, user_id: e.target.value })}
-                      className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                      required
+      {/* Tablo */}
+      <div className="overflow-x-auto w-full">
+        <table className="min-w-full border border-gray-200 text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-2 text-left">Üye</th>
+              <th className="p-2 text-left">Tutar</th>
+              <th className="p-2 text-left">Tarih</th>
+              <th className="p-2 text-left">Ay</th>
+              {profile?.is_admin && <th className="p-2 text-left">İşlemler</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {currentPayments.map((payment) => (
+              <tr key={payment.id} className="border-t">
+                <td className="p-2">{(payment as any).member?.full_name}</td>
+                <td className="p-2">₺{payment.amount.toFixed(2)}</td>
+                <td className="p-2">
+                  {format(new Date(payment.payment_date), 'dd-MM-yyyy', { locale: tr })}
+                </td>
+                <td className="p-2">
+                  {format(new Date(payment.payment_month), 'MMMM yyyy', { locale: tr })}
+                </td>
+                {profile?.is_admin && (
+                  <td className="p-2">
+                    <button
+                      onClick={() => handleOpenEditModal(payment)}
+                      className="text-blue-600 hover:underline mr-2"
                     >
-                      <option value="">Bir üye seçin</option>
-                      {members.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                      Düzenle
+                    </button>
+                    <button
+                      onClick={() => handleDeletePayment(payment.id)}
+                      className="text-red-600 hover:underline"
+                    >
+                      Sil
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-                  <div>
-                    <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
-                      Tutar
-                    </label>
-                    <div className="mt-1 relative rounded-md shadow-sm">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500 sm:text-sm">₺</span>
-                      </div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        id="amount"
-                        value={newPayment.amount}
-                        onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })}
-                        className="pl-7 block w-full pr-12 sm:text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                        placeholder="0.00"
-                        required
-                      />
-                    </div>
-                  </div>
+      {/* Sayfalama Kontrolleri */}
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center mt-4">
+          <button
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(currentPage - 1)}
+            className="px-4 py-2 border rounded mr-2 disabled:opacity-50"
+          >
+            Önceki
+          </button>
+          <span>
+            {currentPage} / {totalPages}
+          </span>
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(currentPage + 1)}
+            className="px-4 py-2 border rounded ml-2 disabled:opacity-50"
+          >
+            Sonraki
+          </button>
+        </div>
+      )}
 
-                  <div>
-                    <label htmlFor="payment_date" className="block text-sm font-medium text-gray-700">
-                      Ödeme Tarihi
-                    </label>
-                    <div className="mt-1">
-                      <input
-                        type="date"
-                        id="payment_date"
-                        value={newPayment.payment_date}
-                        onChange={(e) => setNewPayment({ ...newPayment, payment_date: e.target.value })}
-                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                        required
-                      />
-                    </div>
-                  </div>
+      {/* Ekleme Modalı */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-2 relative">
+            {/* Kapatma Butonu */}
+            <button
+              onClick={() => setShowAddModal(false)}
+              className="absolute top-2 right-2 text-gray-600 hover:text-gray-800"
+            >
+              X
+            </button>
+            <h3 className="text-lg font-medium mb-4">Yeni Ödeme Ekle</h3>
+            <form onSubmit={handleAddPayment} className="space-y-4">
+              <select
+                value={newPayment.user_id}
+                onChange={(e) => setNewPayment({ ...newPayment, user_id: e.target.value })}
+                className="w-full p-2 border rounded"
+                required
+              >
+                <option value="">Bir üye seçin</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.full_name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                placeholder="Tutar"
+                value={newPayment.amount}
+                onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })}
+                className="w-full p-2 border rounded"
+                required
+              />
+              <input
+                type="date"
+                value={newPayment.payment_date}
+                onChange={(e) => setNewPayment({ ...newPayment, payment_date: e.target.value })}
+                className="w-full p-2 border rounded"
+                required
+              />
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700"
+              >
+                Kaydet
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
-                  <div>
-                    <label htmlFor="payment_month" className="block text-sm font-medium text-gray-700">
-                      Ödeme Ayı
-                    </label>
-                    <div className="mt-1">
-                      <input
-                        type="month"
-                        id="payment_month"
-                        value={newPayment.payment_month}
-                        onChange={(e) => setNewPayment({ ...newPayment, payment_month: e.target.value })}
-                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 sm:mt-6">
-                  <button
-                    type="submit"
-                    className="inline-flex justify-center w-full rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm"
-                  >
-                    Kaydet
-                  </button>
-                </div>
-              </form>
-            </div>
+      {/* Düzenleme Modalı */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-2">
+            <h3 className="text-lg font-medium mb-4">Ödemeyi Düzenle</h3>
+            <form onSubmit={handleEditPayment} className="space-y-4">
+              <select
+                value={editPayment.user_id}
+                onChange={(e) => setEditPayment({ ...editPayment, user_id: e.target.value })}
+                className="w-full p-2 border rounded"
+                required
+              >
+                <option value="">Bir üye seçin</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.full_name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                placeholder="Tutar"
+                value={editPayment.amount}
+                onChange={(e) => setEditPayment({ ...editPayment, amount: e.target.value })}
+                className="w-full p-2 border rounded"
+                required
+              />
+              <input
+                type="date"
+                value={editPayment.payment_date}
+                onChange={(e) => setEditPayment({ ...editPayment, payment_date: e.target.value })}
+                className="w-full p-2 border rounded"
+                required
+              />
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700"
+              >
+                Güncelle
+              </button>
+            </form>
           </div>
         </div>
       )}
