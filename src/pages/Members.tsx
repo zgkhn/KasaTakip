@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { format } from 'date-fns';
-import { tr } from 'date-fns/locale';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Eye, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
+import html2canvas from 'html2canvas';
 
 interface Profile {
   id: string;
@@ -29,12 +28,10 @@ const Members: React.FC = () => {
   const [selectedMember, setSelectedMember] = useState<Profile | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const { profile } = useAuth();
+  const modalRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetchMembers();
-  }, []);
-
-  const fetchMembers = async () => {
+  // Üyeleri getirme işlemini useCallback ile sarmallıyoruz
+  const fetchMembers = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -49,7 +46,11 @@ const Members: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchMembers();
+  }, [fetchMembers]);
 
   const fetchMemberPayments = async (memberId: string) => {
     try {
@@ -73,6 +74,7 @@ const Members: React.FC = () => {
     setShowDetailModal(true);
   };
 
+  // Ödemeleri yıl ve aya göre gruplandırıyoruz
   const groupPaymentsByYearAndMonth = () => {
     const allMonths: Record<string, string> = {
       '01': 'Ocak',
@@ -90,17 +92,17 @@ const Members: React.FC = () => {
     };
 
     const grouped: { 
-      [key: string]: { 
-        [key: string]: { 
+      [year: string]: { 
+        [monthName: string]: { 
           isPaid: boolean; 
           amount: number;
           payments: number[];
         } 
       } 
     } = {};
-    const monthOrder = [ '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+    const monthOrder = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
-    // Son 2 yılı oluştur
+    // Son 2 yılı (mevcut yıl ve önceki yıl) kapsayacak şekilde oluşturuyoruz.
     const currentYear = new Date().getFullYear();
     for (let year = currentYear; year >= currentYear - 1; year--) {
       grouped[year] = {};
@@ -113,15 +115,13 @@ const Members: React.FC = () => {
       });
     }
     
-    // Ödemeleri topla
+    // Ödeme verilerini grupluyoruz
     payments.forEach(payment => {
       const [year, month] = payment.payment_month.split('-');
       const monthName = allMonths[month];
       
       if (grouped[year] && monthName) {
-        if (!grouped[year][monthName].isPaid) {
-          grouped[year][monthName].isPaid = true;
-        }
+        grouped[year][monthName].isPaid = true;
         grouped[year][monthName].payments.push(payment.amount);
         grouped[year][monthName].amount = grouped[year][monthName].payments.reduce((a, b) => a + b, 0);
       }
@@ -132,6 +132,47 @@ const Members: React.FC = () => {
 
   const calculateTotalPayments = () => {
     return payments.reduce((total, payment) => total + payment.amount, 0);
+  };
+
+  const closeModal = () => {
+    setShowDetailModal(false);
+    setSelectedMember(null);
+    setPayments([]);
+  };
+
+  // Popup görselini yakalayıp paylaşmayı deneyelim.
+  const handleShareModal = async () => {
+    if (modalRef.current) {
+      try {
+        const canvas = await html2canvas(modalRef.current);
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const file = new File([blob], 'popup.png', { type: 'image/png' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              try {
+                await navigator.share({
+                  title: 'Aidat Geçmişi Popup',
+                  text: 'İşte aidat geçmişi popup görseli:',
+                  files: [file],
+                });
+                toast.success('Paylaşım başarılı!');
+              } catch (error) {
+                console.error('Error sharing:', error);
+                toast.error('Paylaşım sırasında hata oluştu.');
+              }
+            } else {
+              // Fallback: Görseli yeni pencerede aç
+              const url = URL.createObjectURL(file);
+              window.open(url, '_blank');
+              toast('Görsel yeni sekmede açıldı. Lütfen oradan paylaşın.');
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error capturing modal:', error);
+        toast.error('Popup görseli oluşturulurken hata oluştu.');
+      }
+    }
   };
 
   if (!profile?.is_admin) {
@@ -202,14 +243,27 @@ const Members: React.FC = () => {
         </div>
       </div>
 
-      {/* Detay Modal */}
+      {/* Modal: Overlay'a tıklanırsa kapanır */}
       {showDetailModal && selectedMember && (
-        <div className="fixed inset-0 z-10 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4">
-            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-lg sm:max-w-2xl">
+        <div 
+          className="fixed inset-0 z-10 overflow-y-auto" 
+          onClick={closeModal}
+        >
+          {/* Overlay arka plan */}
+          <div className="absolute inset-0 bg-black bg-opacity-40" />
+
+          {/* Modal içeriği */}
+          <div 
+            className="relative flex items-center justify-center min-h-screen px-4" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div 
+              ref={modalRef} 
+              className="relative bg-white rounded-lg shadow-xl w-full max-w-lg sm:max-w-2xl transform transition-all duration-300"
+            >
               <div className="absolute top-0 right-0 pt-4 pr-4">
                 <button
-                  onClick={() => setShowDetailModal(false)}
+                  onClick={closeModal}
                   className="rounded-md text-gray-400 hover:text-gray-500 focus:outline-none"
                 >
                   <X className="h-6 w-6" />
@@ -217,7 +271,7 @@ const Members: React.FC = () => {
               </div>
 
               <div className="px-4 pt-5 pb-4 sm:p-6">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
                   {selectedMember.full_name} - Aidat Geçmişi
                 </h3>
                 <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-md mb-4">
@@ -231,15 +285,14 @@ const Members: React.FC = () => {
                   {Object.entries(groupPaymentsByYearAndMonth()).map(([year, months]) => (
                     <div key={year} className="bg-white shadow overflow-hidden sm:rounded-lg">
                       <div className="px-4 py-5 sm:px-6 bg-gray-50">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900">{year} Yılı Ödemeleri</h3>
+                        <h3 className="text-lg font-medium text-gray-900">{year} Yılı Ödemeleri</h3>
                       </div>
                       <div className="border-t border-gray-200">
-                        {/* Mobilde 2 sütun, geniş ekranlarda 3 sütun */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4">
                           {Object.entries(months).map(([month, data]) => (
                             <div 
                               key={month} 
-                              className={`p-3 rounded-lg ${
+                              className={`p-3 rounded-lg text-center ${
                                 data.isPaid 
                                   ? 'bg-green-100 text-green-800' 
                                   : 'bg-gray-100 text-gray-500'
@@ -280,6 +333,22 @@ const Members: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Modal alt kısmında butonlar */}
+              <div className="flex justify-end space-x-3 px-4 pb-4 sm:px-6">
+                <button
+                  onClick={closeModal}
+                  className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors"
+                >
+                  Kapat
+                </button>
+                <button
+                  onClick={handleShareModal}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Bilgilendir
+                </button>
               </div>
             </div>
           </div>
